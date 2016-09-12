@@ -6,16 +6,16 @@ from queue import Queue
 import select
 import socket
 import struct
-from threading import Thread, Lock, Event
-from pprint import pprint
 import sys
+from threading import Thread, Lock, Event
 
-SELECT_TIMEOUT = 1.0
+
+SELECT_TIMEOUT = 0.1
 
 
 def create_qsocket(addr):
-    socket = socket.create_connection(addr)
-    return QSocket(socket)
+    sock = socket.create_connection(addr)
+    return QSocket(sock)
 
 
 class QSocket():
@@ -27,28 +27,20 @@ class QSocket():
     def __init__(self, sock):
         self.inq = Queue()
         self.sock = sock
-        # self.sock.settimeout(1.0)
+        self.sock.setblocking(True)
         self.threads = {}
-        self.sock_lock = Lock()
+        self.sock_access = Lock()
         self.terminate = Event()
         self.pump = Thread(target=self.receive, daemon=True)
         self.pump.start()
 
     def send(self, obj):
-        if obj is None:
-            raise ValueError()
         obj_bytes = pickle.dumps(obj)
         # max size of "i" is 4 bytes i.e. 2GB
         obj_len = struct.pack(QSocket.PACK_FMT, len(obj_bytes))
         buffer = b''.join((obj_len, obj_bytes))
-        # pprint(buffer)
-        with self.sock_lock:
+        with self.sock_access:
             self.sock.sendall(buffer)
-
-    def close(self, wait=False):
-        self.terminate.set()
-        if wait:
-            self.pump.join()
 
     def receive(self):
         try:
@@ -64,18 +56,16 @@ class QSocket():
         except OSError as e:
             print(e, file=sys.stderr)
         finally:
-            with self.sock_lock:
-                self.sock.shutdown(socket.SHUT_RDWR)
-                self.sock.close()
-            self.process(None)
+            # call on_close while socket is still open
+            self.on_close()
+            self.sock.shutdown(socket.SHUT_RDWR)
+            self.sock.close()
 
     def recv_bytes(self, n):
         chunks = []
         received = 0
         while received < n:
-            # add a timeout to protect again partly frozen source
-            # lock socket only while receiving
-            with self.sock_lock:
+            with self.sock_access:
                 chunk = self.sock.recv(n - received)
             if len(chunk) == 0:
                 raise BrokenPipeError("[{}] [{}] Remote socket closed, Local {}, Remote {}".format(
@@ -87,6 +77,14 @@ class QSocket():
     def process(self, obj):
         self.inq.put(obj)
 
+    def on_close(self):
+        self.inq.put(None)
+
+    def close(self, wait=False):
+        self.terminate.set()
+        if wait:
+            self.pump.join()
+
 
 class Listener(Thread):
 
@@ -96,21 +94,31 @@ class Listener(Thread):
         self.socket_class = socket_class
         self.sockq = Queue()
         self.terminate = Event()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def run(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(self.addr)
-            s.listen()
-            while not self.terminate.is_set():
-                # timeout wait for connection to become available
-                sread, _, _ = select.select([s], [], [], SELECT_TIMEOUT)
-                if sread != []:
-                    sock, _ = s.accept()
-                    qs = self.socket_class(sock)
-                    self.sockq.put(qs)
+        self.sock.settimeout(1.0)
+        self.sock.bind(self.addr)
+        self.sock.listen()
+        while not self.terminate.is_set():
+            try:
+                cx, _ = self.sock.accept()
+            except OSError as e:
+                if str(e) == "timed out":
+                    continue
+                elif self.terminate.is_set():
+                    break
+                else:
+                    print("[{}] [{}] socket.accept() exception, {}".format(
+                        self.name, self.ident, e), file=sys.stderr)
+                    break
+            qs = self.socket_class(cx)
+            self.sockq.put(qs)
+        self.sock.close()
         self.sockq.put(None)
 
     def close(self, wait=False):
         self.terminate.set()
+        self.sock.close()
         if wait:
             self.join()
