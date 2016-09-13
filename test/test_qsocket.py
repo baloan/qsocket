@@ -7,7 +7,7 @@ import threading
 from time import sleep
 import unittest
 
-from qsocket import QSocket, Listener, create_qsocket, SELECT_TIMEOUT
+from qsocket import QSocket, Listener, create_qsocket
 
 
 class Echo(QSocket):
@@ -16,7 +16,6 @@ class Echo(QSocket):
         QSocket.__init__(self, socket)
 
     def process(self, obj):
-        # if obj is not None:
         self.send(obj)
 
 
@@ -80,31 +79,31 @@ class SocketClose(unittest.TestCase):
         self.listener.close()
 
     def test_ping_pong(self):
-        # self.alice sends an update
+        # alice sends an update
         req = {"action": "subscribe", "name": "foo", }
         self.alice.send(req)
         resp = self.bob.inq.get()
         self.assertEqual(req, resp)
-        # self.bob sends an update
+        # bob sends an update
         req = {"action": "update", "name": "foo", "value": 120.2}
         self.bob.send(req)
         resp = self.alice.inq.get()
         self.assertEqual(req, resp)
 
     def test_remote_close(self):
-        # self.alice sends an update
+        # alice sends an update
         req = {"action": "create", "name": "foo", }
         self.alice.send(req)
         resp = self.bob.inq.get()
         self.assertEqual(req, resp)
         self.bob.close(wait=True)
         # wait for remote socket close (needs select timeout)
-        sleep(SELECT_TIMEOUT)
+        sleep(QSocket.SELECT_TIMEOUT)
         req = {"action": "update", "name": "foo", "value": 120.2}
         self.assertRaises(OSError, self.alice.send, req)
 
     def test_remote_close2(self):
-        # self.alice sends an update
+        # alice sends an update
         req = {"action": "create", "name": "foo", }
         self.alice.send(req)
         resp = self.bob.inq.get()
@@ -118,19 +117,19 @@ class SocketClose(unittest.TestCase):
         self.assertEqual(resp, None)
 
     def test_local_close(self):
-        # self.alice sends an update
+        # alice sends an update
         req = {"action": "create", "name": "foo", }
         self.alice.send(req)
         resp = self.bob.inq.get()
         self.assertEqual(req, resp)
         self.alice.close(wait=True)
         # wait for remote socket close (needs select timeout)
-        sleep(SELECT_TIMEOUT)
+        sleep(QSocket.SELECT_TIMEOUT)
         req = {"action": "update", "name": "foo", "value": 120.2}
         self.assertRaises(OSError, self.bob.send, req)
 
     def test_local_close2(self):
-        # self.alice sends an update
+        # alice sends an update
         req = {"action": "create", "name": "foo", }
         self.alice.send(req)
         resp = self.bob.inq.get()
@@ -142,3 +141,12 @@ class SocketClose(unittest.TestCase):
         # remote inq None: socket closed
         resp = self.bob.inq.get()
         self.assertEqual(resp, None)
+
+
+class NonFunctional(unittest.TestCase):
+
+    def test_size_ladder(self):
+        pass
+
+    def test_throughput(self):
+        pass

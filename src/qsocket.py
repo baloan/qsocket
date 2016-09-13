@@ -10,9 +10,6 @@ import sys
 from threading import Thread, Lock, Event
 
 
-SELECT_TIMEOUT = 0.1
-
-
 def create_qsocket(addr):
     sock = socket.create_connection(addr)
     return QSocket(sock)
@@ -20,9 +17,10 @@ def create_qsocket(addr):
 
 class QSocket():
     """ Threadsafe socket connection """
+    # https://docs.python.org/3/howto/sockets.html#socket-howto
     PACK_FMT = "!i"
     PACK_SIZE = struct.calcsize(PACK_FMT)
-    # https://docs.python.org/3/howto/sockets.html#socket-howto
+    SELECT_TIMEOUT = 0.1
 
     def __init__(self, sock):
         self.inq = Queue()
@@ -46,7 +44,7 @@ class QSocket():
         try:
             while not self.terminate.is_set():
                 # timeout wait for data to become available
-                sread, _, _ = select.select([self.sock], [], [], SELECT_TIMEOUT)
+                sread, _, _ = select.select([self.sock], [], [], QSocket.SELECT_TIMEOUT)
                 if sread != []:
                     len_bytes = self.recv_bytes(QSocket.PACK_SIZE)
                     obj_len = struct.unpack(QSocket.PACK_FMT, len_bytes)[0]
@@ -87,6 +85,7 @@ class QSocket():
 
 
 class Listener(Thread):
+    ACCEPT_TIMEOUT = 1.0
 
     def __init__(self, addr=("", 8080), socket_class=QSocket):
         Thread.__init__(self, name="Port-{}".format(addr[1]))
@@ -97,7 +96,7 @@ class Listener(Thread):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def run(self):
-        self.sock.settimeout(1.0)
+        self.sock.settimeout(Listener.ACCEPT_TIMEOUT)
         self.sock.bind(self.addr)
         self.sock.listen()
         while not self.terminate.is_set():
