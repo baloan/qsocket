@@ -1,6 +1,15 @@
 #!python3
 # encoding: utf8
 
+# Copyright (C) 2016 Andreas Balogh
+# Published under the MIT LICENCE, See LICENCE for details.
+
+"""
+A Queue like socket interface with multithreading. The QSocket class
+send and receives any Python object which can be pickled. pickle is
+used as serialisation mechanism.
+"""
+
 import pickle
 from queue import Queue
 import select
@@ -8,6 +17,8 @@ import socket
 import struct
 import sys
 from threading import Thread, Lock, Event
+
+import multiprocessing as mp
 
 
 def create_qsocket(addr):
@@ -66,8 +77,8 @@ class QSocket():
             with self.sock_access:
                 chunk = self.sock.recv(n - received)
             if len(chunk) == 0:
-                raise BrokenPipeError("[{}] [{}] Remote socket closed, Local {}, Remote {}".format(
-                    self.pump.name, self.pump.ident, self.sock.getsockname(), self.sock.getpeername()))
+                raise BrokenPipeError("{}:{} [{}] Remote socket closed, Local {}, Remote {}".format(
+                    mp.current_process().pid, self.pump.ident, self.pump.name, self.sock.getsockname(), self.sock.getpeername()))
             chunks.append(chunk)
             received = received + len(chunk)
         return b''.join(chunks)
@@ -108,13 +119,16 @@ class Listener(Thread):
                 elif self.terminate.is_set():
                     break
                 else:
-                    print("[{}] [{}] socket.accept() exception, {}".format(
-                        self.name, self.ident, e), file=sys.stderr)
+                    print("{}:{} [{}] socket.accept() exception, {}".format(
+                        mp.current_process().pid, self.ident, self.name, e), file=sys.stderr)
                     break
-            qs = self.socket_class(cx)
-            self.sockq.put(qs)
+            self.on_connect(cx)
         self.sock.close()
         self.sockq.put(None)
+
+    def on_connect(self, cx):
+        qs = self.socket_class(cx)
+        self.sockq.put(qs)
 
     def close(self, wait=False):
         self.terminate.set()

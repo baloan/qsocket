@@ -1,11 +1,14 @@
 #!/usr/bin/python3.5
 # encoding: utf8
 
-"""qsocket"""
+"""qsocket test suite"""
 
 import threading
+import multiprocessing as mp
 from time import sleep
 import unittest
+import datetime as dt
+import time
 
 from qsocket import QSocket, Listener, create_qsocket
 
@@ -143,10 +146,53 @@ class SocketClose(unittest.TestCase):
         self.assertEqual(resp, None)
 
 
+def bob(laddr, socket_class):
+    print("{}:{} [{}] runs ----------".format(mp.current_process().pid, 
+                                              threading.current_thread().ident,
+                                              threading.current_thread().name))
+    listener = Listener(laddr, socket_class)
+    listener.start()
+    qsocket = listener.sockq.get()
+    print("{} connection accepted".format(mp.current_process()))
+    print("self.listener {}".format(listener))
+    print("self.qsocket  {}".format(qsocket.pump))
+    # wait for close
+    _ = qsocket.inq.get()
+    print("{} closing socket".format(mp.current_process()))
+    listener.close()
+
+
 class NonFunctional(unittest.TestCase):
 
-    def test_size_ladder(self):
-        pass
+    def setUp(self):
+        port = 8022
+        laddr = ("", port)
+        raddr = ("127.0.0.1", port)
+        # Server
+        proc = mp.Process(target=bob, args=(laddr, Echo,))
+        proc.start()
+        # Client
+        self.alice = create_qsocket(raddr)
+        print("self.alice connected from {} to {}".format(
+            self.alice.sock.getsockname(), self.alice.sock.getpeername()))
+        print("[{}] [{}] runs {} ----------".format(
+            threading.current_thread().name, threading.current_thread().ident, self.id()))
+        print("self.alice    {}".format(self.alice.pump))
 
-    def test_throughput(self):
-        pass
+    def tearDown(self):
+        print("[{}] [{}] closing all sockets".format(
+            threading.current_thread().name, threading.current_thread().ident))
+        self.alice.close()
+
+    def test_size_ladder(self):
+        sleep(1)
+        sizes = (100, 1000, 10000, 100000, 1000000, 10000000,)
+        for s in sizes:
+            send_buffer = b'i' * s
+            t0 = time.perf_counter()
+            self.alice.send(send_buffer)
+            recv_buffer = self.alice.inq.get()
+            self.assertEqual(send_buffer, recv_buffer)
+            t1 = time.perf_counter()
+            td = t1 - t0
+            print("echo ping-pong of {:10} bytes took {:4.4f}s, {:9.0f}kB/s".format(len(send_buffer), td, s / 1000 / td))

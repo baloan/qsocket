@@ -8,7 +8,7 @@ When starting a new project I needed a way to write an asynchronous server. Asyn
 ## Q & A
 
 ### Why not use [asyncio](https://docs.python.org/3/library/asyncio.html)?
-Asyncio is not supported by all functions. My software uses urllib for querying web pages. As a workaround the urllib call has to started in a thread. Why not stick to threads anyway? Also the syntax in polluted by async and yield from statements.  
+Asyncio is not supported by all functions. My software uses urllib for querying web pages. As a workaround the urllib call has to started in a thread. Why not stick to threads anyway? Also the syntax is polluted by async and yield from statements.  
 
 ### Why use multiple threads?
 Enables asynchronous send and receive. The main thread will call send directly. Receiving occurs anytime. The additional pump thread waits for inbound data, unpickles and pushes to a receiver queue for pickup by another thread. 
@@ -47,7 +47,7 @@ The QSocket class encapsulates a [socket](https://docs.python.org/3/library/sock
 Send an object. Only picklable object can be sent. 
 
 		inq
-The threadsafe inbound [queue](https://docs.python.org/3/library/queue.html) where received objects are stored. Any other thread can pickup the object for processing.
+The threadsafe inbound [queue](https://docs.python.org/3/library/queue.html) where received objects are stored. Any other thread can get objects from inq for processing.
 
 		close()
 Stop the receiver thread and close the socket.
