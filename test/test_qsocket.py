@@ -7,7 +7,6 @@ import threading
 import multiprocessing as mp
 from time import sleep
 import unittest
-import datetime as dt
 import time
 
 from qsocket import QSocket, Listener, create_qsocket
@@ -34,17 +33,17 @@ class EchoServer(unittest.TestCase):
         # Client
         self.alice = create_qsocket(raddr)
         # self.bob open connection
-        self.bob = self.listener.sockq.get()
+        self.bob = self.listener.accept()
         print("[{}] [{}] runs {} ----------".format(
             threading.current_thread().name, threading.current_thread().ident, self.id()))
         print("self.listener {}".format(self.listener))
-        print("self.alice    {}".format(self.alice.pump))
-        print("self.bob      {}".format(self.bob.pump))
+        print("self.alice    {}".format(self.alice.receiver_t))
+        print("self.bob      {}".format(self.bob.receiver_t))
 
     def test_string(self):
         req = "Hello echo!"
         self.alice.send(req)
-        resp = self.alice.inq.get()
+        resp = self.alice.recv()
         self.assertEqual(req, resp)
 
     def tearDown(self):
@@ -67,12 +66,12 @@ class SocketClose(unittest.TestCase):
         # Client
         self.alice = create_qsocket(raddr)
         # self.bob open connection
-        self.bob = self.listener.sockq.get()
+        self.bob = self.listener.accept()
         print("[{}] [{}] runs {} ----------".format(
             threading.current_thread().name, threading.current_thread().ident, self.id()))
         print("self.listener {}".format(self.listener))
-        print("self.alice    {}".format(self.alice.pump))
-        print("self.bob      {}".format(self.bob.pump))
+        print("self.alice    {}".format(self.alice.receiver_t))
+        print("self.bob      {}".format(self.bob.receiver_t))
 
     def tearDown(self):
         print("[{}] [{}] closing all sockets".format(
@@ -85,19 +84,19 @@ class SocketClose(unittest.TestCase):
         # alice sends an update
         req = {"action": "subscribe", "name": "foo", }
         self.alice.send(req)
-        resp = self.bob.inq.get()
+        resp = self.bob.recv()
         self.assertEqual(req, resp)
         # bob sends an update
         req = {"action": "update", "name": "foo", "value": 120.2}
         self.bob.send(req)
-        resp = self.alice.inq.get()
+        resp = self.alice.recv()
         self.assertEqual(req, resp)
 
     def test_remote_close(self):
         # alice sends an update
         req = {"action": "create", "name": "foo", }
         self.alice.send(req)
-        resp = self.bob.inq.get()
+        resp = self.bob.recv()
         self.assertEqual(req, resp)
         self.bob.close(wait=True)
         # wait for remote socket close (needs select timeout)
@@ -109,21 +108,21 @@ class SocketClose(unittest.TestCase):
         # alice sends an update
         req = {"action": "create", "name": "foo", }
         self.alice.send(req)
-        resp = self.bob.inq.get()
+        resp = self.bob.recv()
         self.assertEqual(req, resp)
         self.bob.close(wait=True)
         # local inq None: socket closed
-        resp = self.bob.inq.get()
+        resp = self.bob.recv()
         self.assertEqual(resp, None)
         # inq None: socket closed
-        resp = self.alice.inq.get()
+        resp = self.alice.recv()
         self.assertEqual(resp, None)
 
     def test_local_close(self):
         # alice sends an update
         req = {"action": "create", "name": "foo", }
         self.alice.send(req)
-        resp = self.bob.inq.get()
+        resp = self.bob.recv()
         self.assertEqual(req, resp)
         self.alice.close(wait=True)
         # wait for remote socket close (needs select timeout)
@@ -135,29 +134,29 @@ class SocketClose(unittest.TestCase):
         # alice sends an update
         req = {"action": "create", "name": "foo", }
         self.alice.send(req)
-        resp = self.bob.inq.get()
+        resp = self.bob.recv()
         self.assertEqual(req, resp)
         self.alice.close(wait=True)
         # local inq None: socket closed
-        resp = self.alice.inq.get()
+        resp = self.alice.recv()
         self.assertEqual(resp, None)
         # remote inq None: socket closed
-        resp = self.bob.inq.get()
+        resp = self.bob.recv()
         self.assertEqual(resp, None)
 
 
 def bob(laddr, socket_class):
-    print("{}:{} [{}] runs ----------".format(mp.current_process().pid, 
+    print("{}:{} [{}] runs ----------".format(mp.current_process().pid,
                                               threading.current_thread().ident,
                                               threading.current_thread().name))
     listener = Listener(laddr, socket_class)
     listener.start()
-    qsocket = listener.sockq.get()
+    qsocket = listener.accept()
     print("{} connection accepted".format(mp.current_process()))
     print("self.listener {}".format(listener))
-    print("self.qsocket  {}".format(qsocket.pump))
+    print("self.qsocket  {}".format(qsocket.receiver_t))
     # wait for close
-    _ = qsocket.inq.get()
+    _ = qsocket.recv()
     print("{} closing socket".format(mp.current_process()))
     listener.close()
 
@@ -177,7 +176,7 @@ class NonFunctional(unittest.TestCase):
             self.alice.sock.getsockname(), self.alice.sock.getpeername()))
         print("[{}] [{}] runs {} ----------".format(
             threading.current_thread().name, threading.current_thread().ident, self.id()))
-        print("self.alice    {}".format(self.alice.pump))
+        print("self.alice    {}".format(self.alice.receiver_t))
 
     def tearDown(self):
         print("[{}] [{}] closing all sockets".format(
@@ -191,8 +190,9 @@ class NonFunctional(unittest.TestCase):
             send_buffer = b'i' * s
             t0 = time.perf_counter()
             self.alice.send(send_buffer)
-            recv_buffer = self.alice.inq.get()
+            recv_buffer = self.alice.recv()
             self.assertEqual(send_buffer, recv_buffer)
             t1 = time.perf_counter()
             td = t1 - t0
-            print("echo ping-pong of {:10} bytes took {:4.4f}s, {:9.0f}kB/s".format(len(send_buffer), td, s / 1000 / td))
+            print(
+                "echo ping-pong of {:10} bytes took {:4.4f}s, {:9.0f}kB/s".format(len(send_buffer), td, s / 1000 / td))

@@ -40,8 +40,11 @@ class QSocket():
         self.threads = {}
         self.sock_access = Lock()
         self.terminate = Event()
-        self.pump = Thread(target=self.receive, daemon=True)
-        self.pump.start()
+        self.receiver_t = Thread(target=self._receiver, daemon=True)
+        self.receiver_t.start()
+
+    def recv(self):
+        return self.inq.get()
 
     def send(self, obj):
         obj_bytes = pickle.dumps(obj)
@@ -51,7 +54,7 @@ class QSocket():
         with self.sock_access:
             self.sock.sendall(buffer)
 
-    def receive(self):
+    def _receiver(self):
         try:
             while not self.terminate.is_set():
                 # timeout wait for data to become available
@@ -78,7 +81,7 @@ class QSocket():
                 chunk = self.sock.recv(n - received)
             if len(chunk) == 0:
                 raise BrokenPipeError("{}:{} [{}] Remote socket closed, Local {}, Remote {}".format(
-                    mp.current_process().pid, self.pump.ident, self.pump.name, self.sock.getsockname(), self.sock.getpeername()))
+                    mp.current_process().pid, self.receiver_t.ident, self.receiver_t.name, self.sock.getsockname(), self.sock.getpeername()))
             chunks.append(chunk)
             received = received + len(chunk)
         return b''.join(chunks)
@@ -92,7 +95,7 @@ class QSocket():
     def close(self, wait=False):
         self.terminate.set()
         if wait:
-            self.pump.join()
+            self.receiver_t.join()
 
 
 class Listener(Thread):
@@ -122,13 +125,16 @@ class Listener(Thread):
                     print("{}:{} [{}] socket.accept() exception, {}".format(
                         mp.current_process().pid, self.ident, self.name, e), file=sys.stderr)
                     break
-            self.on_connect(cx)
+            self._connected(cx)
         self.sock.close()
         self.sockq.put(None)
 
-    def on_connect(self, cx):
+    def _connected(self, cx):
         qs = self.socket_class(cx)
         self.sockq.put(qs)
+
+    def accept(self):
+        return self.sockq.get()
 
     def close(self, wait=False):
         self.terminate.set()
