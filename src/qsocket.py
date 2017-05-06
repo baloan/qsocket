@@ -7,7 +7,7 @@
 """
 A Queue like socket interface with multithreading. The QSocket class
 send and receives any Python object which can be pickled. pickle is
-used as serialisation mechanism.
+used for serialisation.
 """
 
 import pickle
